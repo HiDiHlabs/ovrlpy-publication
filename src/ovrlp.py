@@ -89,7 +89,8 @@ def assign_z_mean(df, z_column='z'):
     return means
 
 
-def create_histogram(df, genes=None, min_expression=0, KDE_bandwidth=None, grid_size=1):
+def create_histogram(df, genes=None, min_expression=0, KDE_bandwidth=None, grid_size=1,
+                     x_max=None, y_max=None):
     """
     Creates a 2d histogram of the data frame's [x,y] coordinates.
     Parameters
@@ -114,14 +115,14 @@ def create_histogram(df, genes=None, min_expression=0, KDE_bandwidth=None, grid_
     if genes is None:
         genes = df['gene'].unique()
 
-    x_max = df['x_pixel'].max()
-    y_max = df['y_pixel'].max()
+    if x_max is None: x_max = df['x_pixel'].max()
+    if y_max is None: y_max = df['y_pixel'].max()
 
     df = df[df['gene'].isin(genes)]
 
     hist, xedges, yedges = np.histogram2d(df['x_pixel'], df['y_pixel'],
                                           bins=[np.arange(x_max+2),
-                                                np.arange(x_max+2)])
+                                                np.arange(y_max+2)])
 
     if KDE_bandwidth is not None:
         hist = gaussian_filter(hist, sigma=KDE_bandwidth)
@@ -129,9 +130,6 @@ def create_histogram(df, genes=None, min_expression=0, KDE_bandwidth=None, grid_
     hist[hist < min_expression] = 0
 
     return hist
-
-
-
 
 
 def get_rois(df, genes=None, min_distance=10, KDE_bandwidth=1, min_expression=5):
@@ -234,12 +232,17 @@ def compute_divergence(df, genes, KDE_bandwidth=1, threshold_fraction=0.5, min_d
     df_top = df[df.z_delim < df.z]
     df_bottom = df[df.z_delim > df.z]
 
+    x_max = df.x_pixel.max()
+    y_max = df.y_pixel.max()
+
     for gene in genes:
 
         hist_top = create_histogram(
-            df_top, genes=[gene], min_expression=0, KDE_bandwidth=KDE_bandwidth,)
+            df_top, genes=[gene], min_expression=0, KDE_bandwidth=KDE_bandwidth,
+            x_max=x_max, y_max=y_max)
         hist_bottom = create_histogram(
-            df_bottom, genes=[gene], min_expression=0, KDE_bandwidth=KDE_bandwidth,)
+            df_bottom, genes=[gene], min_expression=0, KDE_bandwidth=KDE_bandwidth,
+            x_max=x_max, y_max=y_max)
 
         mask = (hist_top > 0) & (hist_bottom > 0) & (hist_sum > 0)
         hist_top[mask] /= hist_sum[mask]
@@ -320,6 +323,10 @@ def find_overlaps(coordinate_df=None,
     else:
         return pd.DataFrame({'x':rois_x, 'y':rois_y, 'divergence':divergence})
     
+    
+def determine_celltype_class_assignments(expression_samples,signature_matrix):
+    correlations = np.array([np.corrcoef(expression_samples.iloc[:,i],signature_matrix.values.T)[0,1:] for i in range(expression_samples.shape[1])])
+    return np.argmax(correlations,-1)
 
 def visualize_rois(coordinate_df=None,
                    roi_df=None,
@@ -382,13 +389,9 @@ def visualize_rois(coordinate_df=None,
     colors = min_to_max(embedding_color.copy())
 
     # plt.figure(figsize=(5,5))
-    
-    def determine_celltype_class_assignments(expression_samples):
-        correlations = np.array([np.corrcoef(expression_samples.iloc[:,i],signature_matrix.values.T)[0,1:] for i in range(expression_samples.shape[1])])
-        return np.argmax(correlations,-1)
 
     celltypes = sorted(signature_matrix.columns)
-    celltype_class_assignments = determine_celltype_class_assignments(localmax_celltyping_samples)
+    celltype_class_assignments = determine_celltype_class_assignments(localmax_celltyping_samples,signature_matrix)
     print(celltype_class_assignments)
     # determine the center of gravity of each celltype in the embedding:
     celltype_centers = np.array([np.median(embedding[celltype_class_assignments==i,:],axis=0) for i in range(len(celltypes))])
@@ -422,7 +425,7 @@ def visualize_rois(coordinate_df=None,
         ax1.set_zlim(np.median(subsample.z)-plot_window_size,np.median(subsample.z)+plot_window_size)
 
         ax2 = plt.subplot(231)
-        plt.scatter(embedding[:,0],embedding[:,1],c='lightgrey',alpha=0.05,marker='.')
+        plt.scatter(embedding[:,0],embedding[:,1],c='lightgrey',alpha=0.05,marker='.',s=1)
         plot_embeddings(subsample_embedding,subsample_embedding_color,celltype_centers,celltypes)
         
         ax3 = plt.subplot(235)
@@ -431,6 +434,8 @@ def visualize_rois(coordinate_df=None,
         c=subsample_embedding_color[subsample.z>subsample.z_delim],marker='.',alpha=0.1,s=20)
         ax3.set_xlim(x-plot_window_size,x+plot_window_size)
         ax3.set_ylim(y-plot_window_size,y+plot_window_size)
+        ax3.scatter(x,y,c='k',marker='+',s=100)
+        plt.title("celltypes (top)")
 
         ax3 = plt.subplot(236)    
         # plt.imshow(hist_sum.T,cmap='Greys',alpha=0.3 )
@@ -438,7 +443,10 @@ def visualize_rois(coordinate_df=None,
         c=subsample_embedding_color[subsample.z<subsample.z_delim],marker='.',alpha=0.1,s=20)
         ax3.set_xlim(x-plot_window_size,x+plot_window_size)
         ax3.set_ylim(y-plot_window_size,y+plot_window_size)
+        plt.title("celltypes (bottom)")
+
         ax4 = plt.subplot(232)
         plt.scatter(coordinate_df.x,coordinate_df.y,c='k',alpha=0.01,marker='.',s=1)
         plt.scatter(subsample.x,subsample.y,c=subsample_embedding_color,marker='.',alpha=0.8,s=1)
+        ax3.scatter(x,y,c='k',marker='+',s=100)
 
