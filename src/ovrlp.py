@@ -414,13 +414,13 @@ class Visualizer():
         self.pca_2d = dim_reduction(n_components=min(100,self.localmax_celltyping_samples.shape[0]//2))
         factors = self.pca_2d.fit_transform(self.localmax_celltyping_samples.T)
 
-        embedder_2d = umap.UMAP(n_components=2,min_dist=0.0)
-        self.embedding = embedder_2d.fit_transform(factors)
+        self.embedder_2d = umap.UMAP(n_components=2,min_dist=0.0)
+        self.embedding = self.embedder_2d.fit_transform(factors)
 
-        embedder_3d = umap.UMAP(n_components=3, min_dist=0.0,n_neighbors=10,
+        self.embedder_3d = umap.UMAP(n_components=3, min_dist=0.0,n_neighbors=10,
                         init=np.concatenate([self.embedding,0.01*np.random.normal(size=(self.embedding.shape[0],1))],axis=1))
         # embedding_color = embedder_3d.fit_transform(factors)
-        embedding_color = embedder_3d.fit_transform(self.embedding)
+        embedding_color = self.embedder_3d.fit_transform(self.embedding)
 
         embedding_color,self.pca_3d = fill_color_axes(embedding_color)
 
