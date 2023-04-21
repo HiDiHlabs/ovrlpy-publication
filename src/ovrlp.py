@@ -356,6 +356,138 @@ def determine_celltype_class_assignments(expression_samples,signature_matrix):
     correlations = np.array([np.corrcoef(expression_samples_.iloc[:,i],signature_matrix.values.T)[0,1:] for i in range(expression_samples.shape[1])])
     return np.argmax(correlations,-1)
 
+class Visualizer():
+    """"""
+    def __init__(self, KDE_bandwidth=1.5,
+                  celltyping_min_expression=10,
+                  celltyping_min_distance=5,) -> None:
+        """ """
+        self.KDE_bandwidth = KDE_bandwidth
+
+        self.celltyping_min_expression = celltyping_min_expression
+        self.celltyping_min_distance = celltyping_min_distance
+        self.rois_celltyping_x, self.rois_celltyping_y = None, None
+        self.localmax_celltyping_samples = None
+        self.signatures = None
+        self.celltype_centers=None
+
+        self.pca_2d = None
+        self.embedder_2d = None
+        self.pca_3d = None
+        self.embedder_3d = None
+
+        self.genes = None
+        self.embedding = None
+        self.colors = None
+        self.colors_min_max = [None,None]
+
+    def fit(self, coordinate_df=None, adata=None,
+                  genes=None, gene_key='gene',coordinates_key='spatial', signature_matrix=None):
+        """ """
+
+        if (coordinate_df is None) and (adata is None):
+            raise ValueError('Either adata or coordinate_df must be provided.')
+        
+        if coordinate_df is None:
+            coordinate_df = adata.uns[coordinates_key]
+
+        if genes is None:
+            genes = sorted(coordinate_df[gene_key].unique())
+
+        self.genes = genes
+
+        if signature_matrix is None:
+            signature_matrix = pd.DataFrame(index=genes,columns=genes).astype(float)
+            signature_matrix[:] = np.eye(len(genes))
+
+        self.signatures = signature_matrix
+
+        celltypes = sorted(signature_matrix.columns)
+
+        celltype_class_assignments = determine_celltype_class_assignments(self.localmax_celltyping_samples,signature_matrix)
+    
+        # determine the center of gravity of each celltype in the embedding:
+        self.celltype_centers = np.array([np.median(self.embedding[celltype_class_assignments==i,:],axis=0) for i in range(len(celltypes))])
+
+
+        self.rois_celltyping_x,self.rois_celltyping_y = get_rois(coordinate_df, genes = genes, min_distance=self.celltyping_min_distance,
+                            KDE_bandwidth=self.KDE_bandwidth, min_expression=self.celltyping_min_expression,)
+        
+        self.localmax_celltyping_samples =  get_expression_vectors_at_rois(coordinate_df,self.rois_celltyping_x,self.rois_celltyping_y,genes,) 
+
+        self.localmax_celltyping_samples = self.localmax_celltyping_samples/(self.localmax_celltyping_samples.to_numpy()**2).sum(0,keepdims=True)**0.5
+
+        self.pca_2d = dim_reduction(n_components=min(100,self.localmax_celltyping_samples.shape[0]//2))
+        factors = self.pca_2d.fit_transform(self.localmax_celltyping_samples.T)
+
+        embedder_2d = umap.UMAP(n_components=2,min_dist=0.0)
+        self.embedding = embedder_2d.fit_transform(factors)
+
+        embedder_3d = umap.UMAP(n_components=3, min_dist=0.0,n_neighbors=10,
+                        init=np.concatenate([self.embedding,0.1*np.random.normal(size=(self.embedding.shape[0],1))],axis=1))
+        # embedding_color = embedder_3d.fit_transform(factors)
+        embedding_color = embedder_3d.fit_transform(self.embedding)
+
+        embedding_color,self.pca_3d = fill_color_axes(embedding_color)
+
+        color_min = embedding_color.min(0)
+        color_max = embedding_color.max(0)
+
+        self.colors = min_to_max(embedding_color.copy())
+        self.colors_min_max = [color_min,color_max]
+
+    def transform(self,x,y,coordinate_df=None,window_size=30):
+        """    """
+
+        celltypes = self.signatures.columns
+
+        subsample_mask = get_spatial_subsample_mask(coordinate_df,x,y,plot_window_size=window_size)
+        subsample = coordinate_df[subsample_mask]
+
+        distances, neighbor_indices = create_knn_graph(subsample[['x','y','z']].values,k=90)
+        local_expression = get_knn_expression(distances,neighbor_indices,genes,subsample.gene.cat.codes.values,bandwidth=1.0)
+        local_expression = local_expression/((local_expression**2).sum(0)**0.5)
+        subsample_embedding, subsample_embedding_color = transform_embeddings(local_expression.T.values,self.pca_2d,embedder_2d=self.embedder_2d,embedder_3d=self.embedder_3d)
+        subsample_embedding_color,_ = fill_color_axes(subsample_embedding_color,self.pca_3d)
+        color_min,color_max = self.colors_min_max
+        subsample_embedding_color = (subsample_embedding_color-color_min)/(color_max-color_min)
+        subsample_embedding_color = np.clip(subsample_embedding_color,0,1)
+
+        plt.figure(figsize=(18,12))
+
+        ax1 = plt.subplot(234,projection='3d')
+        ax1.scatter(subsample.x,subsample.y,subsample.z,c=subsample_embedding_color,marker='.',alpha=0.1)
+        ax1.set_zlim(np.median(subsample.z)-window_size,np.median(subsample.z)+window_size)
+
+        ax2 = plt.subplot(231)
+        plt.scatter(self.embedding[:,0],self.embedding[:,1],c='lightgrey',alpha=0.05,marker='.',s=1)
+        plot_embeddings(subsample_embedding,subsample_embedding_color,self.celltype_centers,celltypes)
+        
+        ax3 = plt.subplot(235)
+        # plt.imshow((divergence*hist_sum).T,cmap='Greys', alpha=0.3 )
+        ax3.scatter(subsample[subsample.z>subsample.z_delim].x,subsample[subsample.z>subsample.z_delim].y,
+        c=subsample_embedding_color[subsample.z>subsample.z_delim],marker='.',alpha=0.1,s=50)
+        ax3.set_xlim(x-window_size,x+window_size)
+        ax3.set_ylim(y-window_size,y+window_size)
+        ax3.scatter(x,y,c='k',marker='+',s=100)
+        plt.title("celltypes (top)")
+
+        ax3 = plt.subplot(236)    
+        # plt.imshow(hist_sum.T,cmap='Greys',alpha=0.3 )
+        ax3.scatter(subsample[subsample.z<subsample.z_delim].x,subsample[subsample.z<subsample.z_delim].y,
+        c=subsample_embedding_color[subsample.z<subsample.z_delim],marker='.',alpha=0.1,s=50)
+        ax3.set_xlim(x-window_size,x+window_size)
+        ax3.set_ylim(y-window_size,y+window_size)
+        plt.title("celltypes (bottom)")
+
+        # ax4 = plt.subplot(232)
+        # plt.scatter(coordinate_df.x,coordinate_df.y,c='lightgrey',alpha=0.01,marker='.',s=1)
+        # plt.scatter(subsample.x,subsample.y,c=subsample_embedding_color,marker='.',alpha=0.8,s=1)
+        # plt.scatter(roi_df.x,roi_df.y,c=roi_df.divergence,marker='+',s=100,cmap='autumn')
+        # ax3.scatter(x,y,c='k',marker='+',s=100)
+
+
+
 def visualize_rois(coordinate_df=None,
                    roi_df=None,
                   adata=None, 
@@ -408,6 +540,7 @@ def visualize_rois(coordinate_df=None,
 
     embedder_3d = umap.UMAP(n_components=3, min_dist=0.0,n_neighbors=10,
                     init=np.concatenate([embedding,0.1*np.random.normal(size=(embedding.shape[0],1))],axis=1))
+    # embedding_color = embedder_3d.fit_transform(factors)
     embedding_color = embedder_3d.fit_transform(embedding)
 
     embedding_color,color_pca = fill_color_axes(embedding_color)

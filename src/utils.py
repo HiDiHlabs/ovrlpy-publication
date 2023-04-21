@@ -108,6 +108,7 @@ def transform_embeddings(expression,pca,embedder_2d,embedder_3d):
     factors = pca.transform(expression)
 
     embedding = embedder_2d.transform(factors)
+    # embedding_color = embedder_3d.transform(factors)
     embedding_color = embedder_3d.transform(embedding)
     
     # embedding_color = (embedding_color-color_min)/(color_max-color_min)
