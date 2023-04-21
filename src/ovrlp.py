@@ -89,7 +89,7 @@ def assign_z_mean(df, z_column='z'):
     return means
 
 
-def create_histogram(df, genes=None, min_expression=0, KDE_bandwidth=None, grid_size=1,
+def create_histogram(df, genes=None, min_expression=0, KDE_bandwidth=None, 
                      x_max=None, y_max=None):
     """
     Creates a 2d histogram of the data frame's [x,y] coordinates.
@@ -118,16 +118,19 @@ def create_histogram(df, genes=None, min_expression=0, KDE_bandwidth=None, grid_
     if x_max is None: x_max = df['x_pixel'].max()
     if y_max is None: y_max = df['y_pixel'].max()
 
-    df = df[df['gene'].isin(genes)]
+    df = df[df['gene'].isin(genes)].copy()
+
 
     hist, xedges, yedges = np.histogram2d(df['x_pixel'], df['y_pixel'],
                                           bins=[np.arange(x_max+2),
                                                 np.arange(y_max+2)])
 
+
     if KDE_bandwidth is not None:
         hist = gaussian_filter(hist, sigma=KDE_bandwidth)
 
     hist[hist < min_expression] = 0
+
 
     return hist
 
@@ -154,21 +157,10 @@ def get_rois(df, genes=None, min_distance=10, KDE_bandwidth=1, min_expression=5)
 
     hist = create_histogram(
         df, genes=genes, min_expression=min_expression, KDE_bandwidth=KDE_bandwidth)
-
+    
     rois_x, rois_y, _ = determine_localmax(
         hist, min_distance=min_distance, min_expression=min_expression)
 
-    # rois_n_pixel = rois_x+rois_y*df.x_pixel.max()
-
-    # if 'z_delim' in df.columns:
-    #     c = pd.Series(index=rois_n_pixel)
-    #     c[:] = 0
-    #     c_ = df.n_pixel[df.n_pixel.isin(rois_n_pixel)].groupby(
-    #         df.n_pixel).apply(lambda x: len(x))
-    #     c[c_.index] = c_
-
-    # else:
-    #     c = 'r'
 
     return rois_x, rois_y
 
@@ -201,9 +193,9 @@ def get_expression_vectors_at_rois(df,rois_x, rois_y,genes = None, KDE_bandwidth
 
     return expressions
 
-def compute_divergence(df, genes, KDE_bandwidth=1, threshold_fraction=0.5, min_distance=3, min_expression=5, density_weight=2,  plot=False):
+def compute_divergence(df, genes, KDE_bandwidth=1, threshold_fraction=0.5, min_distance=3, min_expression=5, density_weight=2,  plot=False, return_maps=False):
     """
-    Computes the divergence between the top and bottom of the cell.
+    Computes the divergence between the top and bottom of the tissue sample.
     Parameters
     ----------
     df : pd.DataFrame
@@ -224,10 +216,51 @@ def compute_divergence(df, genes, KDE_bandwidth=1, threshold_fraction=0.5, min_d
         A matrix of divergence values.
     """
 
-    hist_sum = create_histogram(
+    divergence, signal_histogram = compute_divergence_map(df, genes, KDE_bandwidth, min_expression)
+
+    distance_score = divergence*signal_histogram**density_weight
+    distance_threshold = distance_score.max()*threshold_fraction
+
+    rois_x, rois_y, distance_score = determine_localmax(distance_score, min_distance, distance_threshold)
+
+    if plot:
+        plt.imshow(signal_histogram, cmap='Greens')
+        alpha = np.nan_to_num(divergence)
+        alpha = alpha - alpha.min()
+        alpha = alpha/alpha.max()
+
+        plt.imshow(divergence, cmap='Reds', alpha=alpha**0.5)
+        # plt.scatter(rois_y, rois_x, c='b', marker='x')
+
+    if  return_maps:
+        return rois_x, rois_y, distance_score, signal_histogram, divergence
+
+    return rois_x, rois_y, distance_score
+
+
+def compute_divergence_map(df,genes, KDE_bandwidth, min_expression,):
+    """
+    Computes the divergence map between the top and bottom of the tissue sample.
+    Parameters
+    ----------
+    df : pd.DataFrame
+        A dataframe of coordinates.
+    genes : list    
+        A list of genes to compute the divergence for.
+    KDE_bandwidth : int
+        The bandwidth of the KDE.
+    Returns
+    -------
+    divergence : np.array
+        A pixel map of divergence values.
+    signal_histogram : np.array
+        A pixel map of signal magnitude.
+    """
+
+    signal_histogram = create_histogram(
         df, genes=genes, min_expression=min_expression, KDE_bandwidth=KDE_bandwidth)
 
-    divergence = np.zeros_like(hist_sum)
+    divergence = np.zeros_like(signal_histogram)
 
     df_top = df[df.z_delim < df.z]
     df_bottom = df[df.z_delim > df.z]
@@ -244,30 +277,18 @@ def compute_divergence(df, genes, KDE_bandwidth=1, threshold_fraction=0.5, min_d
             df_bottom, genes=[gene], min_expression=0, KDE_bandwidth=KDE_bandwidth,
             x_max=x_max, y_max=y_max)
 
-        mask = (hist_top > 0) & (hist_bottom > 0) & (hist_sum > 0)
-        hist_top[mask] /= hist_sum[mask]
-        hist_bottom[mask] /= hist_sum[mask]
+        mask = (hist_top > 0) & (hist_bottom > 0) & (signal_histogram > 0)
+        hist_top[mask] /= signal_histogram[mask]
+        hist_bottom[mask] /= signal_histogram[mask]
 
         divergence[mask] += get_kl_divergence(
             hist_top[mask], hist_bottom[mask])
         divergence[mask] += get_kl_divergence(
             hist_bottom[mask], hist_top[mask])
+        
+    return divergence, signal_histogram
 
-    distance_score = divergence*hist_sum*density_weight
-    distance_threshold = distance_score.max()*threshold_fraction
 
-    rois_x, rois_y, distance_score = determine_localmax(distance_score, min_distance, distance_threshold)
-
-    if plot:
-        plt.imshow(hist_sum, cmap='Greens')
-        alpha = np.nan_to_num(divergence)
-        alpha = alpha - alpha.min()
-        alpha = alpha/alpha.max()
-
-        plt.imshow(divergence, cmap='Reds', alpha=alpha**0.5)
-        plt.scatter(rois_y, rois_x, c='b', marker='x')
-
-    return rois_x, rois_y, distance_score
 
 def find_overlaps(coordinate_df=None,
                   adata=None, 
@@ -276,7 +297,8 @@ def find_overlaps(coordinate_df=None,
                   genes=None,
                   KDE_bandwidth=1.0,
                   threshold_fraction=0.5,
-                  min_distance=10,):
+                  min_distance=10,
+                  density_weight=2,):
     """
     Finds regions of overlap between the top and bottom of the tissue sample.
     Parameters
@@ -315,17 +337,23 @@ def find_overlaps(coordinate_df=None,
                             genes, 
                             KDE_bandwidth=KDE_bandwidth, 
                             threshold_fraction=threshold_fraction,
-                            min_distance=min_distance)
+                            min_distance=min_distance,
+                            density_weight=density_weight)
+
+    roi_df = pd.DataFrame({'x':rois_x, 'y':rois_y, 'divergence':divergence})
+    roi_df = roi_df.sort_values('divergence', ascending=False)
     
     if adata is not None:
-        adata.uns['rois'] = pd.DataFrame({'x':rois_x, 'y':rois_y, 'divergence':divergence})
+        adata.uns['rois'] = roi_df
         return adata.uns['rois']
     else:
-        return pd.DataFrame({'x':rois_x, 'y':rois_y, 'divergence':divergence})
+        return roi_df
     
     
 def determine_celltype_class_assignments(expression_samples,signature_matrix):
-    correlations = np.array([np.corrcoef(expression_samples.iloc[:,i],signature_matrix.values.T)[0,1:] for i in range(expression_samples.shape[1])])
+
+    expression_samples_ = expression_samples.copy().loc[signature_matrix.index]
+    correlations = np.array([np.corrcoef(expression_samples_.iloc[:,i],signature_matrix.values.T)[0,1:] for i in range(expression_samples.shape[1])])
     return np.argmax(correlations,-1)
 
 def visualize_rois(coordinate_df=None,
@@ -362,16 +390,17 @@ def visualize_rois(coordinate_df=None,
     if type(n_cases) is int:
         n_cases = list(range(0,n_cases))
 
-    rois_celltyping_x,rois_celltyping_y = get_rois(coordinate_df, genes = genes, min_distance=celltyping_min_expression,
-                           KDE_bandwidth=KDE_bandwidth, min_expression=celltyping_min_distance)
+    rois_celltyping_x,rois_celltyping_y = get_rois(coordinate_df, genes = genes, min_distance=celltyping_min_distance,
+                           KDE_bandwidth=KDE_bandwidth, min_expression=celltyping_min_expression,)
 
 
     localmax_celltyping_samples =  get_expression_vectors_at_rois(coordinate_df,rois_celltyping_x,rois_celltyping_y,genes,) 
 
     localmax_celltyping_samples = localmax_celltyping_samples/(localmax_celltyping_samples.to_numpy()**2).sum(0,keepdims=True)**0.5
 
+    # print(localmax_celltyping_samples)
 
-    dr = dim_reduction(n_components=100)
+    dr = dim_reduction(n_components=min(100,localmax_celltyping_samples.shape[0]//2))
     factors = dr.fit_transform(localmax_celltyping_samples.T)
 
     embedder_2d = umap.UMAP(n_components=2,min_dist=0.0)
@@ -388,18 +417,18 @@ def visualize_rois(coordinate_df=None,
 
     colors = min_to_max(embedding_color.copy())
 
-    # plt.figure(figsize=(5,5))
-
     celltypes = sorted(signature_matrix.columns)
+
+    # gene_intersection = list(set(signature_matrix.index).intersection(set(genes)))
     celltype_class_assignments = determine_celltype_class_assignments(localmax_celltyping_samples,signature_matrix)
-    print(celltype_class_assignments)
+    # print(celltype_class_assignments)
     # determine the center of gravity of each celltype in the embedding:
     celltype_centers = np.array([np.median(embedding[celltype_class_assignments==i,:],axis=0) for i in range(len(celltypes))])
 
-    divergence_indices = np.argsort(roi_df.divergence.values)[::-1]
+    # divergence_indices = np.argsort(roi_df.divergence.values)[::-1]
 
     for n_case in n_cases:
-        x,y = (roi_df.x[divergence_indices[n_case]],roi_df.y[divergence_indices[n_case]])
+        x,y = roi_df.x.iloc[n_case],roi_df.y.iloc[n_case]
 
         # ct_top,ct_bottom = get_celltype(expressions_top.iloc[idcs[n_case]]),get_celltype(expressions_bottom.iloc[idcs[n_case]])
 
@@ -418,8 +447,6 @@ def visualize_rois(coordinate_df=None,
 
         plt.figure(figsize=(18,12))
 
-        # plt.suptitle('-'.join([str(ct_top),str(ct_bottom)]))
-
         ax1 = plt.subplot(234,projection='3d')
         ax1.scatter(subsample.x,subsample.y,subsample.z,c=subsample_embedding_color,marker='.',alpha=0.1)
         ax1.set_zlim(np.median(subsample.z)-plot_window_size,np.median(subsample.z)+plot_window_size)
@@ -431,7 +458,7 @@ def visualize_rois(coordinate_df=None,
         ax3 = plt.subplot(235)
         # plt.imshow((divergence*hist_sum).T,cmap='Greys', alpha=0.3 )
         ax3.scatter(subsample[subsample.z>subsample.z_delim].x,subsample[subsample.z>subsample.z_delim].y,
-        c=subsample_embedding_color[subsample.z>subsample.z_delim],marker='.',alpha=0.1,s=20)
+        c=subsample_embedding_color[subsample.z>subsample.z_delim],marker='.',alpha=0.1,s=50)
         ax3.set_xlim(x-plot_window_size,x+plot_window_size)
         ax3.set_ylim(y-plot_window_size,y+plot_window_size)
         ax3.scatter(x,y,c='k',marker='+',s=100)
@@ -440,13 +467,14 @@ def visualize_rois(coordinate_df=None,
         ax3 = plt.subplot(236)    
         # plt.imshow(hist_sum.T,cmap='Greys',alpha=0.3 )
         ax3.scatter(subsample[subsample.z<subsample.z_delim].x,subsample[subsample.z<subsample.z_delim].y,
-        c=subsample_embedding_color[subsample.z<subsample.z_delim],marker='.',alpha=0.1,s=20)
+        c=subsample_embedding_color[subsample.z<subsample.z_delim],marker='.',alpha=0.1,s=50)
         ax3.set_xlim(x-plot_window_size,x+plot_window_size)
         ax3.set_ylim(y-plot_window_size,y+plot_window_size)
         plt.title("celltypes (bottom)")
 
         ax4 = plt.subplot(232)
-        plt.scatter(coordinate_df.x,coordinate_df.y,c='k',alpha=0.01,marker='.',s=1)
+        plt.scatter(coordinate_df.x,coordinate_df.y,c='lightgrey',alpha=0.01,marker='.',s=1)
         plt.scatter(subsample.x,subsample.y,c=subsample_embedding_color,marker='.',alpha=0.8,s=1)
+        plt.scatter(roi_df.x,roi_df.y,c=roi_df.divergence,marker='+',s=100,cmap='autumn')
         ax3.scatter(x,y,c='k',marker='+',s=100)
 

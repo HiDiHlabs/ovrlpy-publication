@@ -119,10 +119,56 @@ def plot_embeddings(embedding,embedding_color,celltype_centers,celltypes):
     colors = np.clip(embedding_color.copy(),0,1)
 
     plt.scatter(embedding[:,0],embedding[:,1],c=(colors),alpha=0.1,marker='.')
+
+    text_artists = []
     for i in range(len(celltypes)):
-        plt.text(celltype_centers[i,0],celltype_centers[i,1],celltypes[i],color='k',fontsize=8)
+        t = plt.text(np.nan_to_num((celltype_centers[i,0])),np.nan_to_num(celltype_centers[i,1]),celltypes[i],color='k',fontsize=8)
+        text_artists.append(t)
+
+    untangle_text(text_artists)
+
+def untangle_text(text_artists,max_iterations=10000):
+
+    ax = plt.gca()
+    inv = ax.transData.inverted()
+
+    artist_coords = np.array([text_artist.get_position() for text_artist in text_artists])
+    artist_coords = artist_coords+np.random.normal(0,0.001,artist_coords.shape)
+    artist_extents = ([text_artist.get_window_extent() for text_artist in text_artists])
+    artist_extents = np.array([inv.transform(extent.get_points()) for extent in artist_extents])
+    artist_extents = artist_extents[:,1]-artist_extents[:,0]
+
+    initial_artist_coords = artist_coords.copy()
+
+    for i in range(max_iterations):
+        relative_positions_x = artist_coords[:,0][:,None]-artist_coords[:,0][None,:]
+        relative_positions_y = artist_coords[:,1][:,None]-artist_coords[:,1][None,:]
+
+        relative_positions_x/= 0.1+(artist_extents[:,0][:,None]+artist_extents[:,0][None,:])/2
+        relative_positions_y/= 0.1+(artist_extents[:,1][:,None]+artist_extents[:,1][None,:])/2
+
+        # distances = np.sqrt(relative_positions_x**2+relative_positions_y**2)
+        distances = np.abs(relative_positions_x)+np.abs(relative_positions_y)
+
+        gaussian_repulsion = 1*np.exp(-distances/0.5)
+        
+        velocities_x = np.zeros_like(relative_positions_x)
+        velocities_y = np.zeros_like(relative_positions_y)
+
+        velocities_x[distances>0] = gaussian_repulsion[distances>0]*relative_positions_x[distances>0]/distances[distances>0]
+        velocities_y[distances>0] = gaussian_repulsion[distances>0]*relative_positions_y[distances>0]/distances[distances>0]
+        
+        velocities_x[np.eye(velocities_x.shape[0],dtype=bool)]=0
+        velocities_y[np.eye(velocities_y.shape[0],dtype=bool)]=0 
+
+        delta = np.stack([velocities_x,velocities_y],axis=1).mean(-1)
+        # # delta = delta.clip(-0.1,0.1)
+        artist_coords = artist_coords + delta*0.1
+        # artist_coords  = artist_coords*0.9 + initial_artist_coords*0.1
 
 
+    for i,text_artist in enumerate(text_artists):
+        text_artist.set_position(artist_coords[i,:])
 
 # define a function that subsamples spots around x,y given a window size:
 def get_spatial_subsample_mask(coordinate_df,x,y,plot_window_size=5):
