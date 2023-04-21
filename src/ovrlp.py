@@ -404,12 +404,6 @@ class Visualizer():
 
         celltypes = sorted(signature_matrix.columns)
 
-        celltype_class_assignments = determine_celltype_class_assignments(self.localmax_celltyping_samples,signature_matrix)
-    
-        # determine the center of gravity of each celltype in the embedding:
-        self.celltype_centers = np.array([np.median(self.embedding[celltype_class_assignments==i,:],axis=0) for i in range(len(celltypes))])
-
-
         self.rois_celltyping_x,self.rois_celltyping_y = get_rois(coordinate_df, genes = genes, min_distance=self.celltyping_min_distance,
                             KDE_bandwidth=self.KDE_bandwidth, min_expression=self.celltyping_min_expression,)
         
@@ -424,7 +418,7 @@ class Visualizer():
         self.embedding = embedder_2d.fit_transform(factors)
 
         embedder_3d = umap.UMAP(n_components=3, min_dist=0.0,n_neighbors=10,
-                        init=np.concatenate([self.embedding,0.1*np.random.normal(size=(self.embedding.shape[0],1))],axis=1))
+                        init=np.concatenate([self.embedding,0.01*np.random.normal(size=(self.embedding.shape[0],1))],axis=1))
         # embedding_color = embedder_3d.fit_transform(factors)
         embedding_color = embedder_3d.fit_transform(self.embedding)
 
@@ -435,9 +429,17 @@ class Visualizer():
 
         self.colors = min_to_max(embedding_color.copy())
         self.colors_min_max = [color_min,color_max]
+        celltype_class_assignments = determine_celltype_class_assignments(self.localmax_celltyping_samples,signature_matrix)
+    
+        # determine the center of gravity of each celltype in the embedding:
+        self.celltype_centers = np.array([np.median(self.embedding[celltype_class_assignments==i,:],axis=0) for i in range(len(celltypes))])
+
+
 
     def transform(self,x,y,coordinate_df=None,window_size=30):
         """    """
+
+        genes=self.genes
 
         celltypes = self.signatures.columns
 
@@ -486,7 +488,25 @@ class Visualizer():
         # plt.scatter(roi_df.x,roi_df.y,c=roi_df.divergence,marker='+',s=100,cmap='autumn')
         # ax3.scatter(x,y,c='k',marker='+',s=100)
 
+    def plot_umap(self,display_text=True,**kwargs):
+        """    """
+        plot_embeddings(self.embedding,self.colors,self.celltype_centers,self.signatures.columns,**kwargs)
 
+    def plot_tissue(self,**kwargs):
+        """    """
+        plt.scatter(self.rois_celltyping_x,self.rois_celltyping_y,c=self.colors,marker='.',alpha=1,**kwargs)
+
+    def plot_fit(self,):
+        """    """	
+
+        plt.figure(figsize=(15,7))
+
+        plt.subplot(121)
+        self.plot_umap()
+
+
+        plt.subplot(122)
+        self.plot_tissue()
 
 def visualize_rois(coordinate_df=None,
                    roi_df=None,
@@ -539,7 +559,7 @@ def visualize_rois(coordinate_df=None,
     embedding = embedder_2d.fit_transform(factors)
 
     embedder_3d = umap.UMAP(n_components=3, min_dist=0.0,n_neighbors=10,
-                    init=np.concatenate([embedding,0.1*np.random.normal(size=(embedding.shape[0],1))],axis=1))
+                    init=np.concatenate([embedding,0.01*np.random.normal(size=(embedding.shape[0],1))],axis=1))
     # embedding_color = embedder_3d.fit_transform(factors)
     embedding_color = embedder_3d.fit_transform(embedding)
 
