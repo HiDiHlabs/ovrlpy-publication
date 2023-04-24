@@ -123,7 +123,7 @@ def plot_embeddings(embedding,embedding_color,celltype_centers,celltypes):
 
     text_artists = []
     for i in range(len(celltypes)):
-        t = plt.text(np.nan_to_num((celltype_centers[i,0])),np.nan_to_num(celltype_centers[i,1]),celltypes[i],color='k',fontsize=8)
+        t = plt.text(np.nan_to_num((celltype_centers[i,0])),np.nan_to_num(celltype_centers[i,1]),celltypes[i],color='k',fontsize=12)
         text_artists.append(t)
 
     untangle_text(text_artists)
