@@ -435,6 +435,15 @@ class Visualizer():
         self.celltype_centers = np.array([np.median(self.embedding[celltype_class_assignments==i,:],axis=0) for i in range(len(celltypes))])
 
 
+    def fit_signatures(self,signature_matrix):
+        """ """
+        self.signatures = signature_matrix
+        celltypes = sorted(signature_matrix.columns)
+        
+        celltype_class_assignments = determine_celltype_class_assignments(self.localmax_celltyping_samples,signature_matrix)
+        
+        # determine the center of gravity of each celltype in the embedding:
+        self.celltype_centers = np.array([np.median(self.embedding[celltype_class_assignments==i,:],axis=0) for i in range(len(celltypes))])
 
     def transform(self,x,y,coordinate_df=None,window_size=30):
         """    """
@@ -480,6 +489,7 @@ class Visualizer():
         c=subsample_embedding_color[subsample.z<subsample.z_delim],marker='.',alpha=0.1,s=50)
         ax3.set_xlim(x-window_size,x+window_size)
         ax3.set_ylim(y-window_size,y+window_size)
+        ax3.scatter(x,y,c='k',marker='+',s=100)
         plt.title("celltypes (bottom)")
 
         # ax4 = plt.subplot(232)
