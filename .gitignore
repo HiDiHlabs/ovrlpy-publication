@@ -128,7 +128,8 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-./output/*
+output/*
 
 #Any csv coordinate files:
 *.csv
+# *.png
