@@ -128,8 +128,26 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# output data files:
 output/*
+dev/data_preperation/*
 
 #Any csv coordinate files:
 *.csv
 # *.png
+conda-ovrlpy
+ovrlpy
+
+*.svg
+*.csv
+*.h5ad
+*.zip
+*.json
+*.h5
+*.vis
+*.viz
+*.txt
+*.npy
+*.tsv
+*.tsv.gz
+temp
