@@ -18,16 +18,20 @@ def main():
 
     args = parser.parse_args()
 
+    import os
+
+    os.environ["POLARS_MAX_THREADS"] = f"{args.n_threads}"
+
     import ovrlpy
 
-    coordinate_df = ovrlpy.io.read_Xenium(args.input)
-
-    _ = ovrlpy.run(
-        df=coordinate_df,
-        cell_diameter=10,
-        n_expected_celltypes=args.n_pcs,
+    analysis = ovrlpy.Ovrlp(
+        ovrlpy.io.read_Xenium(args.input),
+        n_components=args.n_pcs,
         n_workers=args.n_threads,
     )
+    analysis.analyse()
+
+    print("Done")
 
 
 if __name__ == "__main__":
