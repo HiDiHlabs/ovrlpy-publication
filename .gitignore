@@ -151,3 +151,4 @@ ovrlpy
 *.tsv
 *.tsv.gz
 temp
+*.parquet
