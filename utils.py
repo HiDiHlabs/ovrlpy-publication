@@ -43,6 +43,7 @@ def plot_transcripts(
         # rasterized=True,
     )
     finalize_axes(ax_top, x, y, window_size)
+    ax_top.set_title("top")
 
     ax_bottom = plt.subplot(gs[:, 1])
     ax_bottom.scatter(
@@ -53,6 +54,7 @@ def plot_transcripts(
         # rasterized=True,
     )
     finalize_axes(ax_bottom, x, y, window_size)
+    ax_bottom.set_title("bottom")
 
     ax_horizontal_x = plt.subplot(gs[0, 2])
     roi_x = roi_transcripts.filter(pl.col("y") < (y + 4), pl.col("y") > (y - 4))
@@ -64,6 +66,7 @@ def plot_transcripts(
         # rasterized=True,
     )
     finalize_axes(ax_horizontal_x, x, np.nan, window_size)
+    ax_horizontal_x.set_title("side (x)")
 
     ax_horizontal_y = plt.subplot(gs[1, 2])
     roi_y = roi_transcripts.filter(pl.col("x") < (x + 4), pl.col("x") > (x - 4))
@@ -75,6 +78,7 @@ def plot_transcripts(
         # rasterized=True,
     )
     finalize_axes(ax_horizontal_y, y, np.nan, window_size)
+    ax_horizontal_y.set_title("side (y)")
 
     ax_integrity = plt.subplot(gs[:, 3], facecolor="black")
     ax_integrity.imshow(
@@ -85,6 +89,7 @@ def plot_transcripts(
         vmax=1,
     )
     finalize_axes(ax_integrity, window_size, window_size, window_size)
+    ax_integrity.set_title("vertical signal integrity")
 
     return fig
 
