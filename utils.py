@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 from ovrlpy._plotting import _plot_signal_integrity
 
@@ -186,3 +188,15 @@ def plot_celltype_consistency(
             spine.set_visible(True)
 
     return fig
+
+
+def read_mapmycells_zip(path):
+    from zipfile import ZipFile
+
+    import pandas as pd
+
+    path = Path(path)
+    with ZipFile(path) as zipfile:
+        with zipfile.open(path.stem + ".csv") as csvfile:
+            df = pd.read_csv(csvfile, index_col=0, comment="#")
+    return df
