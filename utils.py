@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import numpy as np
-from ovrlpy._plotting import _plot_signal_integrity
 
 CM = 1 / 2.54
 FONT = {"family": "sans-serif", "weight": "normal", "size": 6}
@@ -37,6 +36,7 @@ def plot_transcripts(
 ):
     import matplotlib.pyplot as plt
     import polars as pl
+    from ovrlpy._plotting import _plot_signal_integrity
 
     fig = plt.figure(figsize=figsize)
 
